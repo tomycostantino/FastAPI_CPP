@@ -8,8 +8,94 @@
 #include <sstream>
 #include <vector>
 #include <algorithm>
+#include <variant>
 
 namespace http {
+
+    class JSON {
+    public:
+        using Object = std::map<std::string, JSON>;
+        using Array = std::vector<JSON>;
+        using Value = std::variant<std::nullptr_t, bool, int, double, std::string, Array, Object>;
+
+        JSON() : m_value(nullptr) {}
+        JSON(std::nullptr_t) : m_value(nullptr) {}
+        JSON(bool value) : m_value(value) {}
+        JSON(int value) : m_value(value) {}
+        JSON(double value) : m_value(value) {}
+        JSON(const char* value) : m_value(std::string(value)) {}
+        JSON(const std::string& value) : m_value(value) {}
+        JSON(const Array& value) : m_value(value) {}
+        JSON(const Object& value) : m_value(value) {}
+
+        static JSON object(std::initializer_list<std::pair<const std::string, JSON>> init) {
+            return JSON(Object(init.begin(), init.end()));
+        }
+
+        static JSON array(std::initializer_list<JSON> init) {
+            return JSON(Array(init.begin(), init.end()));
+        }
+
+        std::string stringify() const {
+            return std::visit([](auto&& arg) -> std::string {
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_same_v<T, std::nullptr_t>) {
+                    return "null";
+                } else if constexpr (std::is_same_v<T, bool>) {
+                    return arg ? "true" : "false";
+                } else if constexpr (std::is_same_v<T, int>) {
+                    return std::to_string(arg);
+                } else if constexpr (std::is_same_v<T, double>) {
+                    return std::to_string(arg);
+                } else if constexpr (std::is_same_v<T, std::string>) {
+                    return "\"" + escape_string(arg) + "\"";
+                } else if constexpr (std::is_same_v<T, Array>) {
+                    std::string result = "[";
+                    for (size_t i = 0; i < arg.size(); ++i) {
+                        if (i > 0) result += ",";
+                        result += arg[i].stringify();
+                    }
+                    result += "]";
+                    return result;
+                } else if constexpr (std::is_same_v<T, Object>) {
+                    std::string result = "{";
+                    bool first = true;
+                    for (const auto& [key, value] : arg) {
+                        if (!first) result += ",";
+                        result += "\"" + escape_string(key) + "\":" + value.stringify();
+                        first = false;
+                    }
+                    result += "}";
+                    return result;
+                }
+            }, m_value);
+        }
+
+    private:
+        Value m_value;
+
+        static std::string escape_string(const std::string& s) {
+            std::string result;
+            for (char c : s) {
+                switch (c) {
+                    case '"': result += "\\\""; break;
+                    case '\\': result += "\\\\"; break;
+                    case '\b': result += "\\b"; break;
+                    case '\f': result += "\\f"; break;
+                    case '\n': result += "\\n"; break;
+                    case '\r': result += "\\r"; break;
+                    case '\t': result += "\\t"; break;
+                    default:
+                        if ('\x00' <= c && c <= '\x1f') {
+                            result += "\\u" + std::string(4 - std::to_string((int)c).length(), '0') + std::to_string((int)c);
+                        } else {
+                            result += c;
+                        }
+                }
+            }
+            return result;
+        }
+    };
 
     enum class Method {
         GET,
@@ -166,28 +252,28 @@ namespace http {
         return stream.str();
     }
 
-    inline Response HTTP_200_OK(std::string body = "OK", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
-        return Response{{1, 1}, HttpStatus::OK, std::move(headers), std::move(body)};
+    inline Response HTTP_200_OK(const JSON& body = JSON(), std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}}) {
+        return Response{{1, 1}, HttpStatus::OK, std::move(headers), body.stringify()};
     }
 
-    inline Response HTTP_201_CREATED(std::string body = "Created", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
-        return Response{{1, 1}, HttpStatus::CREATED, std::move(headers), std::move(body)};
+    inline Response HTTP_201_CREATED(const JSON& body = JSON(), std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}}) {
+        return Response{{1, 1}, HttpStatus::CREATED, std::move(headers), body.stringify()};
     }
 
-    inline Response HTTP_400_BAD_REQUEST(std::string body = "Bad Request", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
-        return Response{{1, 1}, HttpStatus::BAD_REQUEST, std::move(headers), std::move(body)};
+    inline Response HTTP_400_BAD_REQUEST(const JSON& body = JSON(), std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}}) {
+        return Response{{1, 1}, HttpStatus::BAD_REQUEST, std::move(headers), body.stringify()};
     }
 
-    inline Response HTTP_404_NOT_FOUND(std::string body = "Not Found", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
-        return Response{{1, 1}, HttpStatus::NOT_FOUND, std::move(headers), std::move(body)};
+    inline Response HTTP_404_NOT_FOUND(const JSON& body = JSON(), std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}}) {
+        return Response{{1, 1}, HttpStatus::NOT_FOUND, std::move(headers), body.stringify()};
     }
 
-    inline Response HTTP_500_INTERNAL_SERVER_ERROR(std::string body = "Internal Server Error", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
-        return Response{{1, 1}, HttpStatus::INTERNAL_SERVER_ERROR, std::move(headers), std::move(body)};
+    inline Response HTTP_500_INTERNAL_SERVER_ERROR(const JSON& body = JSON(), std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}}) {
+        return Response{{1, 1}, HttpStatus::INTERNAL_SERVER_ERROR, std::move(headers), body.stringify()};
     }
 
-    inline Response custom_response(HttpStatus status, std::string body = "", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
-        return Response{{1, 1}, status, std::move(headers), std::move(body)};
+    inline Response custom_response(HttpStatus status, const JSON& body = JSON(), std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}}) {
+        return Response{{1, 1}, status, std::move(headers), body.stringify()};
     }
 }
 
