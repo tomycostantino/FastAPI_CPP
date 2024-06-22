@@ -24,6 +24,22 @@ namespace http {
         UNKNOWN
     };
 
+    enum class HttpStatus {
+        OK = 200,
+        CREATED = 201,
+        ACCEPTED = 202,
+        NO_CONTENT = 204,
+        BAD_REQUEST = 400,
+        UNAUTHORIZED = 401,
+        FORBIDDEN = 403,
+        NOT_FOUND = 404,
+        METHOD_NOT_ALLOWED = 405,
+        INTERNAL_SERVER_ERROR = 500,
+        NOT_IMPLEMENTED = 501,
+        BAD_GATEWAY = 502,
+        SERVICE_UNAVAILABLE = 503
+    };
+
     struct Version {
         int major;
         int minor;
@@ -39,10 +55,28 @@ namespace http {
 
     struct Response {
         Version version;
-        int status_code;
-        std::string status_message;
+        HttpStatus status;
         std::map<std::string, std::string> headers;
         std::string body;
+
+        std::string status_message() const {
+            switch (status) {
+                case HttpStatus::OK: return "OK";
+                case HttpStatus::CREATED: return "Created";
+                case HttpStatus::ACCEPTED: return "Accepted";
+                case HttpStatus::NO_CONTENT: return "No Content";
+                case HttpStatus::BAD_REQUEST: return "Bad Request";
+                case HttpStatus::UNAUTHORIZED: return "Unauthorized";
+                case HttpStatus::FORBIDDEN: return "Forbidden";
+                case HttpStatus::NOT_FOUND: return "Not Found";
+                case HttpStatus::METHOD_NOT_ALLOWED: return "Method Not Allowed";
+                case HttpStatus::INTERNAL_SERVER_ERROR: return "Internal Server Error";
+                case HttpStatus::NOT_IMPLEMENTED: return "Not Implemented";
+                case HttpStatus::BAD_GATEWAY: return "Bad Gateway";
+                case HttpStatus::SERVICE_UNAVAILABLE: return "Service Unavailable";
+                default: return "Unknown Status";
+            }
+        }
     };
 
     inline std::string trim(const std::string& str) {
@@ -122,15 +156,38 @@ namespace http {
     inline std::string construct_response(const Response& response) {
         std::ostringstream stream;
         stream << "HTTP/" << response.version.major << "." << response.version.minor << " "
-               << response.status_code << " " << response.status_message << "\r\n";
+               << static_cast<int>(response.status) << " " << response.status_message() << "\r\n";
 
         for (const auto& header : response.headers) {
             stream << header.first << ": " << header.second << "\r\n";
         }
 
         stream << "\r\n" << response.body;
-
         return stream.str();
+    }
+
+    inline Response HTTP_200_OK(std::string body = "OK", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
+        return Response{{1, 1}, HttpStatus::OK, std::move(headers), std::move(body)};
+    }
+
+    inline Response HTTP_201_CREATED(std::string body = "Created", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
+        return Response{{1, 1}, HttpStatus::CREATED, std::move(headers), std::move(body)};
+    }
+
+    inline Response HTTP_400_BAD_REQUEST(std::string body = "Bad Request", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
+        return Response{{1, 1}, HttpStatus::BAD_REQUEST, std::move(headers), std::move(body)};
+    }
+
+    inline Response HTTP_404_NOT_FOUND(std::string body = "Not Found", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
+        return Response{{1, 1}, HttpStatus::NOT_FOUND, std::move(headers), std::move(body)};
+    }
+
+    inline Response HTTP_500_INTERNAL_SERVER_ERROR(std::string body = "Internal Server Error", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
+        return Response{{1, 1}, HttpStatus::INTERNAL_SERVER_ERROR, std::move(headers), std::move(body)};
+    }
+
+    inline Response custom_response(HttpStatus status, std::string body = "", std::map<std::string, std::string> headers = {{"Content-Type", "text/plain"}}) {
+        return Response{{1, 1}, status, std::move(headers), std::move(body)};
     }
 }
 

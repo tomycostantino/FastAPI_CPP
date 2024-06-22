@@ -31,13 +31,13 @@ namespace fastapi_cpp {
 
     public:
         FunctionRoute(Method method, std::string p, Func h)
-            : method(method), path(std::move(p)), handler(std::move(h)) {}
+                : method(method), path(std::move(p)), handler(std::move(h)) {}
 
         Response handle(const Request& request) const override {
             if (request.method == method && request.uri == path) {
                 return handler(request);
             }
-            return {{1, 1}, 404, "Not found", {{"Content-Type", "text/plain"}}, "Not found"};
+            return http::HTTP_404_NOT_FOUND();
         }
     };
 

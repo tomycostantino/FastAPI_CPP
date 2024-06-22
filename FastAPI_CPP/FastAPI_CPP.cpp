@@ -26,17 +26,17 @@ namespace fastapi_cpp {
     }
 
     Response FastAPI::handle_request(const Request &req) {
-        for (const auto& route : routes) {
+        for (const auto &route: routes) {
             Response response = route->handle(req);
-            if (response.status_code != 404) {
+            if (response.status != http::HttpStatus::NOT_FOUND) {
                 return response;
             }
         }
-        return {{1, 1}, 404, "Not Found", {{"Content-Type", "text/plain"}}, "Not Found"};
+        return http::HTTP_404_NOT_FOUND();
     }
 
     void FastAPI::run(int port) {
-        int server_fd, new_socket;
+        int server_fd;
         struct sockaddr_in address;
         int addrlen = sizeof(address);
         char buffer[4096] = {0};
