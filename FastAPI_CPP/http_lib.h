@@ -36,6 +36,20 @@ namespace http {
             return JSON(Array(init.begin(), init.end()));
         }
 
+        static JSON parse(const std::string& json_string) {
+            size_t index = 0;
+            return parse_value(json_string, index);
+        }
+
+        static std::map<std::string, JSON> json_to_map(const JSON& json) {
+            if (std::holds_alternative<JSON::Object>(json.get_value())) {
+                return std::get<JSON::Object>(json.get_value());
+            }
+            throw std::runtime_error("JSON value is not an object");
+        }
+
+        const Value& get_value() const { return m_value; }
+
         std::string stringify() const {
             return std::visit([](auto&& arg) -> std::string {
                 using T = std::decay_t<decltype(arg)>;
@@ -71,6 +85,14 @@ namespace http {
             }, m_value);
         }
 
+        bool is_string() const { return std::holds_alternative<std::string>(m_value); }
+        std::string as_string() const {
+            if (!is_string()) {
+                throw std::runtime_error("JSON value is not a string");
+            }
+            return std::get<std::string>(m_value);
+        }
+
     private:
         Value m_value;
 
@@ -94,6 +116,182 @@ namespace http {
                 }
             }
             return result;
+        }
+
+        static JSON parse_value(const std::string& json_string, size_t& index) {
+            skip_whitespace(json_string, index);
+
+            if (index >= json_string.length()) {
+                throw std::runtime_error("Unexpected end of input");
+            }
+
+            char c = json_string[index];
+            if (c == '{') {
+                return parse_object(json_string, index);
+            } else if (c == '[') {
+                return parse_array(json_string, index);
+            } else if (c == '"') {
+                return parse_string(json_string, index);
+            } else if (c == 't' || c == 'f') {
+                return parse_boolean(json_string, index);
+            } else if (c == 'n') {
+                return parse_null(json_string, index);
+            } else if (c == '-' || (c >= '0' && c <= '9')) {
+                return parse_number(json_string, index);
+            }
+
+            throw std::runtime_error("Unexpected character");
+        }
+
+        static JSON parse_object(const std::string& json_string, size_t& index) {
+            Object obj;
+            index++;
+
+            while (index < json_string.length()) {
+                skip_whitespace(json_string, index);
+                if (json_string[index] == '}') {
+                    index++;
+                    return JSON(obj);
+                }
+
+                if (!obj.empty()) {
+                    if (json_string[index] != ',') {
+                        throw std::runtime_error("Expected ',' in object");
+                    }
+                    index++;
+                    skip_whitespace(json_string, index);
+                }
+
+                JSON key_json = parse_string(json_string, index);
+                if (!key_json.is_string()) {
+                    throw std::runtime_error("Object key must be a string");
+                }
+                std::string key = key_json.as_string();
+
+                skip_whitespace(json_string, index);
+
+                if (json_string[index] != ':') {
+                    throw std::runtime_error("Expected ':' in object");
+                }
+                index++;
+
+                JSON value = parse_value(json_string, index);
+                obj[key] = value;
+            }
+
+            throw std::runtime_error("Unterminated object");
+        }
+
+        static JSON parse_array(const std::string& json_string, size_t& index) {
+            Array arr;
+            index++;
+
+            while (index < json_string.length()) {
+                skip_whitespace(json_string, index);
+                if (json_string[index] == ']') {
+                    index++;
+                    return JSON(arr);
+                }
+
+                if (!arr.empty()) {
+                    if (json_string[index] != ',') {
+                        throw std::runtime_error("Expected ',' in array");
+                    }
+                    index++;
+                }
+
+                arr.push_back(parse_value(json_string, index));
+            }
+
+            throw std::runtime_error("Unterminated array");
+        }
+
+        static JSON parse_string(const std::string& json_string, size_t& index) {
+            index++;
+            std::string result;
+            while (index < json_string.length()) {
+                char c = json_string[index++];
+                if (c == '"') {
+                    return JSON(result);
+                } else if (c == '\\') {
+                    if (index >= json_string.length()) {
+                        throw std::runtime_error("Unterminated string");
+                    }
+                    char next = json_string[index++];
+                    switch (next) {
+                        case '"': result += '"'; break;
+                        case '\\': result += '\\'; break;
+                        case '/': result += '/'; break;
+                        case 'b': result += '\b'; break;
+                        case 'f': result += '\f'; break;
+                        case 'n': result += '\n'; break;
+                        case 'r': result += '\r'; break;
+                        case 't': result += '\t'; break;
+                        case 'u': {
+                            if (index + 4 > json_string.length()) {
+                                throw std::runtime_error("Incomplete Unicode escape");
+                            }
+                            std::string hex = json_string.substr(index, 4);
+                            index += 4;
+                            int codepoint = std::stoi(hex, nullptr, 16);
+                            result += static_cast<char>(codepoint);
+                            break;
+                        }
+                        default:
+                            throw std::runtime_error("Invalid escape sequence");
+                    }
+                } else {
+                    result += c;
+                }
+            }
+            throw std::runtime_error("Unterminated string");
+        }
+
+        static JSON parse_boolean(const std::string& json_string, size_t& index) {
+            if (json_string.substr(index, 4) == "true") {
+                index += 4;
+                return JSON(true);
+            } else if (json_string.substr(index, 5) == "false") {
+                index += 5;
+                return JSON(false);
+            }
+            throw std::runtime_error("Invalid boolean value");
+        }
+
+        static JSON parse_null(const std::string& json_string, size_t& index) {
+            if (json_string.substr(index, 4) == "null") {
+                index += 4;
+                return JSON(nullptr);
+            }
+            throw std::runtime_error("Invalid null value");
+        }
+
+        static JSON parse_number(const std::string& json_string, size_t& index) {
+            size_t start = index;
+            bool is_float = false;
+            while (index < json_string.length()) {
+                char c = json_string[index];
+                if ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == 'e' || c == 'E' || c == '.') {
+                    if (c == '.' || c == 'e' || c == 'E') {
+                        is_float = true;
+                    }
+                    index++;
+                } else {
+                    break;
+                }
+            }
+            std::string num_str = json_string.substr(start, index - start);
+            if (is_float) {
+                return JSON(std::stod(num_str));
+            } else {
+                return JSON(std::stoi(num_str));
+            }
+        }
+
+        static void skip_whitespace(const std::string& json_string, size_t& index) {
+            while (index < json_string.length() && std::isspace(json_string[index])) {
+                index++;
+            }
         }
     };
 
