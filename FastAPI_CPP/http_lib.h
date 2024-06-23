@@ -131,12 +131,109 @@ namespace http {
         int minor;
     };
 
+    class QueryParams {
+    public:
+        explicit QueryParams(const std::string& query_string) {
+            parse_query_string(query_string);
+        }
+
+        std::string get(const std::string& key) const {
+            auto it = params_.find(key);
+            return (it != params_.end()) ? it->second : "";
+        }
+
+        bool has(const std::string& key) const {
+            return params_.find(key) != params_.end();
+        }
+
+        int get_int(const std::string& key) const {
+            try {
+                return std::stoi(get(key));
+            } catch (const std::exception&) {
+                return 0;
+            }
+        }
+
+        double get_double(const std::string& key) const {
+            try {
+                return std::stod(get(key));
+            } catch (const std::exception&) {
+                return 0.0;
+            }
+        }
+
+        bool get_bool(const std::string& key) const {
+            std::string value = get(key);
+            std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+            return value == "true" || value == "1" || value == "yes";
+        }
+
+        std::string get_string(const std::string& key) const {
+            return get(key);
+        }
+
+        const std::map<std::string, std::string>& get_all() const {
+            return params_;
+        }
+
+    private:
+        std::map<std::string, std::string> params_;
+
+        void parse_query_string(const std::string& query_string) {
+            auto pairs = split(query_string, '&');
+            for (const auto& pair : pairs) {
+                auto kv = split(pair, '=');
+                if (kv.size() == 2) {
+                    params_[kv[0]] = kv[1];
+                } else if (kv.size() == 1) {
+                    params_[kv[0]] = "";
+                }
+            }
+        }
+
+        std::vector<std::string> split(const std::string& str, char delim) {
+            std::vector<std::string> tokens;
+            std::string token;
+            std::istringstream tokenStream(str);
+            while (std::getline(tokenStream, token, delim)) {
+                tokens.push_back(token);
+            }
+            return tokens;
+        }
+    };
+
     struct Request {
         Method method;
         std::string uri;
         Version version;
         std::map<std::string, std::string> headers;
         std::string body;
+        QueryParams query_params;
+
+        Request() : method(Method::GET), version({1, 1}), query_params("") {}
+
+        Request(Method m, const std::string& u, Version v,
+                const std::map<std::string, std::string>& h,
+                const std::string& b)
+                : method(m), version(v), headers(h), body(b), query_params("")
+        {
+            size_t query_start = u.find('?');
+            if (query_start != std::string::npos) {
+                uri = u.substr(0, query_start);
+                query_params = QueryParams(u.substr(query_start + 1));
+            } else {
+                uri = u;
+            }
+        }
+
+        std::string get_header(const std::string& key) const {
+            auto it = headers.find(key);
+            return (it != headers.end()) ? it->second : "";
+        }
+
+        bool has_header(const std::string& key) const {
+            return headers.find(key) != headers.end();
+        }
     };
 
     struct Response {

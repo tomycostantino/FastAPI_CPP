@@ -24,6 +24,7 @@ namespace fastapi_cpp {
     public:
         virtual Response handle(const Request& request, const std::map<std::string, std::string>& params) const = 0;
         virtual bool matches(const Method& method, const std::string& uri) const = 0;
+        virtual std::map<std::string, std::string> extract_params(const std::string& uri) const = 0;
         virtual const std::string& get_path_pattern() const = 0;
         virtual const std::regex& get_regex() const = 0;
         virtual const std::vector<std::string>& get_param_names() const = 0;
@@ -55,7 +56,7 @@ namespace fastapi_cpp {
             }
 
             pattern += std::string(search_start, path_pattern.cend());
-            pattern += "$";
+            pattern += "(?:\\?.*)?$";
 
             path_regex = std::regex(pattern);
             std::cout << "Route created: " << method_to_string(method) << " " << path_pattern << std::endl;
@@ -63,17 +64,34 @@ namespace fastapi_cpp {
         }
 
         bool matches(const Method& m, const std::string& uri) const override {
-            bool method_matches = (method == m);
-            bool uri_matches = std::regex_match(uri, path_regex);
-            std::cout << "Matching route: " << method_to_string(method) << " " << path_pattern << std::endl;
-            std::cout << "Against: " << method_to_string(m) << " " << uri << std::endl;
-            std::cout << "Method match: " << (method_matches ? "true" : "false") << std::endl;
-            std::cout << "URI match: " << (uri_matches ? "true" : "false") << std::endl;
-            return method_matches && uri_matches;
+            if (method != m) return false;
+
+            auto query_pos = uri.find('?');
+            std::string path = (query_pos != std::string::npos) ? uri.substr(0, query_pos) : uri;
+
+            return std::regex_match(path, path_regex);
+        }
+
+
+        std::map<std::string, std::string> extract_params(const std::string& uri) const override {
+            std::map<std::string, std::string> params;
+            std::smatch match;
+            std::string uri_without_query = uri.substr(0, uri.find('?'));
+            if (std::regex_match(uri_without_query, match, path_regex)) {
+                for (size_t i = 0; i < param_names.size(); i++) {
+                    params[param_names[i]] = match[i + 1].str();
+                }
+            }
+            return params;
         }
 
         Response handle(const Request& request, const std::map<std::string, std::string>& params) const override {
-            return handler(request, params);
+            auto query_params = parse_query_string(request.uri);
+
+            auto all_params = params;
+            all_params.insert(query_params.begin(), query_params.end());
+
+            return handler(request, all_params);
         }
 
         const std::string& get_path_pattern() const override {
@@ -90,6 +108,25 @@ namespace fastapi_cpp {
 
         Method get_method() const override {
             return method;
+        }
+    private:
+        std::map<std::string, std::string> parse_query_string(const std::string& uri) const {
+            std::map<std::string, std::string> query_params;
+            auto query_pos = uri.find('?');
+            if (query_pos != std::string::npos) {
+                std::string query = uri.substr(query_pos + 1);
+                std::istringstream iss(query);
+                std::string pair;
+                while (std::getline(iss, pair, '&')) {
+                    auto eq_pos = pair.find('=');
+                    if (eq_pos != std::string::npos) {
+                        std::string key = pair.substr(0, eq_pos);
+                        std::string value = pair.substr(eq_pos + 1);
+                        query_params[key] = value;
+                    }
+                }
+            }
+            return query_params;
         }
     };
 

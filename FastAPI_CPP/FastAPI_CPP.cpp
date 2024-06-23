@@ -34,19 +34,13 @@ namespace fastapi_cpp {
 
                 if (route->matches(req.method, req.uri)) {
                     std::cout << "Route matched!" << std::endl;
-                    std::smatch match;
-                    if (std::regex_match(req.uri, match, route->get_regex())) {
-                        std::map<std::string, std::string> params;
-                        const auto& param_names = route->get_param_names();
-                        for (size_t i = 0; i < param_names.size() && i + 1 < match.size(); ++i) {
-                            params[param_names[i]] = match[i + 1].str();
-                            std::cout << "Param: " << param_names[i] << " = " << match[i + 1].str() << std::endl;
-                        }
+                    auto params = route->extract_params(req.uri);
 
-                        return route->handle(req, params);
-                    } else {
-                        std::cout << "Regex match failed unexpectedly" << std::endl;
+                    for (const auto& [key, value] : params) {
+                        std::cout << "Param: " << key << " = " << value << std::endl;
                     }
+
+                    return route->handle(req, params);
                 } else {
                     std::cout << "Route did not match" << std::endl;
                 }
