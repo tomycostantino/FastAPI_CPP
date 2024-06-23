@@ -25,13 +25,37 @@ namespace fastapi_cpp {
         }
     }
 
-    Response FastAPI::handle_request(const Request &req) {
-        for (const auto &route: routes) {
-            Response response = route->handle(req);
-            if (response.status != http::HttpStatus::NOT_FOUND) {
-                return response;
+    Response FastAPI::handle_request(const Request& req) {
+        std::cout << "Handling request: " << method_to_string(req.method) << " " << req.uri << std::endl;
+
+        for (const auto& route : routes) {
+            try {
+                std::cout << "Checking route: " << method_to_string(route->get_method()) << " " << route->get_path_pattern() << std::endl;
+
+                if (route->matches(req.method, req.uri)) {
+                    std::cout << "Route matched!" << std::endl;
+                    std::smatch match;
+                    if (std::regex_match(req.uri, match, route->get_regex())) {
+                        std::map<std::string, std::string> params;
+                        const auto& param_names = route->get_param_names();
+                        for (size_t i = 0; i < param_names.size() && i + 1 < match.size(); ++i) {
+                            params[param_names[i]] = match[i + 1].str();
+                            std::cout << "Param: " << param_names[i] << " = " << match[i + 1].str() << std::endl;
+                        }
+
+                        return route->handle(req, params);
+                    } else {
+                        std::cout << "Regex match failed unexpectedly" << std::endl;
+                    }
+                } else {
+                    std::cout << "Route did not match" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error in route handling: " << e.what() << std::endl;
             }
         }
+
+        std::cout << "No matching route found, returning 404" << std::endl;
         return http::HTTP_404_NOT_FOUND();
     }
 

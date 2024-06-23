@@ -4,14 +4,22 @@
 int main() {
     fastapi_cpp::FastAPI app;
 
-    app.get("/", [](const fastapi_cpp::Request& request) {
-        return http::HTTP_200_OK("Welcome", {{"Content-Type", "application/json"}});
+    app.get("/", [](const fastapi_cpp::Request& request, const std::map<std::string, std::string>& params) {
+        return http::HTTP_200_OK(http::JSON::object({{"message", "Welcome"}}));
     });
 
-    app.get("/json", [](const fastapi_cpp::Request& request) {
-        return http::HTTP_200_OK(http::JSON::object({{"field1", "value"}, {"field2", 2}}));
+    app.get("/echo", [](const fastapi_cpp::Request& request, const std::map<std::string, std::string>& params) {
+        return http::HTTP_200_OK(http::JSON::object({{"message", "Echo"}}));
     });
 
+    app.get("/test", [](const fastapi_cpp::Request& request, const std::map<std::string, std::string>& params) {
+        return http::HTTP_200_OK(http::JSON::object({{"message", "Testing"}}));
+    });
+
+    app.get("/echo/{echo}", [](const fastapi_cpp::Request& request, const std::map<std::string, std::string>& params) {
+        auto route = params.at("echo");
+        return http::HTTP_200_OK(http::JSON::object({{"Echo route", route}}));
+    });
 
     app.run(8000);
 
